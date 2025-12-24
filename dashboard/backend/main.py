@@ -18,7 +18,9 @@ from dashboard.backend.middleware import (
 from dashboard.backend.api.health import router as health_router
 from dashboard.backend.api.control import router as control_router
 from dashboard.backend.api.websocket import router as websocket_router
+from dashboard.backend.api.router import router as openai_router, register_exception_handlers
 from dashboard.backend.services import cluster_state, ui_manager
+from dashboard.backend.services.model_router import model_router
 
 
 @asynccontextmanager
@@ -37,10 +39,16 @@ async def lifespan(app: FastAPI):
     cluster_state.set_ui_update_callback(ui_manager.broadcast_update)
     logger.info("ui_update_callback_configured")
 
+    # Initialize model router
+    await model_router.startup()
+    logger.info("model_router_started")
+
     yield
 
     # Shutdown
     logger.info("application_shutting_down")
+    await model_router.shutdown()
+    logger.info("model_router_shutdown")
     await close_db()
     logger.info("database_closed")
 
@@ -72,6 +80,10 @@ app.add_middleware(RequestContextMiddleware)
 app.include_router(health_router)  # /health
 app.include_router(control_router)  # /api/*
 app.include_router(websocket_router)  # /ws/*
+app.include_router(openai_router)  # /v1/*
+
+# Register exception handlers for router errors
+register_exception_handlers(app)
 
 # Mount static files if exists
 static_path = Path(__file__).parent.parent / "static"

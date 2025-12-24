@@ -15,6 +15,7 @@ from .settings_service import settings_service, SettingsService
 from .daemon_manager import daemon_manager, DaemonManager
 from .ui_manager import ui_manager, UIManager
 from .stats_storage import stats_storage, StatsStorage
+from .queue_manager import queue_manager, QueueManager, RequestContext
 from .timeout_calculator import (
     ModelSizeTier,
     get_model_size_tier,
@@ -23,6 +24,7 @@ from .timeout_calculator import (
     extract_param_count_from_name,
     with_timeout,
 )
+from .model_router import model_router, ModelRouter
 
 __all__ = [
     # Cluster state
@@ -53,6 +55,10 @@ __all__ = [
     # Stats storage
     "stats_storage",
     "StatsStorage",
+    # Queue manager
+    "queue_manager",
+    "QueueManager",
+    "RequestContext",
     # Timeout calculator
     "ModelSizeTier",
     "get_model_size_tier",
@@ -60,4 +66,7 @@ __all__ = [
     "calculate_inference_timeout",
     "extract_param_count_from_name",
     "with_timeout",
+    # Model router
+    "model_router",
+    "ModelRouter",
 ]

@@ -539,3 +539,56 @@ async def update_setting(
         value=setting.value,
         updated_at=setting.updated_at,
     )
+
+
+# ============================================================================
+# Router Status Endpoints (Phase 5)
+# ============================================================================
+
+
+@router.get("/router/status")
+async def get_router_status() -> Dict[str, any]:
+    """Get router queue status for all models.
+
+    Returns queue depth, active request counts, and last-used timestamps
+    for each model+quantization combination.
+
+    Returns:
+        Dict with queue status for each model+quant:
+            - depth: Number of requests in queue
+            - active_count: Number of active requests (in-queue + in-flight)
+            - last_used: ISO timestamp of last completed request
+    """
+    from dashboard.backend.services.queue_manager import queue_manager
+
+    logger.info("router_status_requested")
+
+    status = queue_manager.get_queue_status()
+
+    logger.info("router_status_returned", queue_count=len(status))
+    return status
+
+
+@router.get("/router/config")
+async def get_router_config() -> Dict[str, any]:
+    """Get current router configuration.
+
+    Returns the active router configuration including timeout settings,
+    keepalive intervals, and capacity limits.
+
+    Returns:
+        Dict with router configuration values
+    """
+    from dashboard.backend.config import get_router_config as get_config
+
+    logger.info("router_config_requested")
+
+    config = get_config()
+
+    return {
+        "default_loading_timeout": config.default_loading_timeout,
+        "default_inference_timeout": config.default_inference_timeout,
+        "keepalive_interval": config.keepalive_interval,
+        "max_gpus_per_machine": config.max_gpus_per_machine,
+        "max_queue_size": config.max_queue_size,
+    }
