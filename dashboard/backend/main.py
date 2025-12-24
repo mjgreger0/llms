@@ -17,6 +17,8 @@ from dashboard.backend.middleware import (
 )
 from dashboard.backend.api.health import router as health_router
 from dashboard.backend.api.control import router as control_router
+from dashboard.backend.api.websocket import router as websocket_router
+from dashboard.backend.services import cluster_state, ui_manager
 
 
 @asynccontextmanager
@@ -30,6 +32,10 @@ async def lifespan(app: FastAPI):
     logger.info("application_starting", version=settings.app_version)
     init_db()
     logger.info("database_initialized")
+
+    # Set up UI update callback from ClusterState to UIManager
+    cluster_state.set_ui_update_callback(ui_manager.broadcast_update)
+    logger.info("ui_update_callback_configured")
 
     yield
 
@@ -65,6 +71,7 @@ app.add_middleware(RequestContextMiddleware)
 # Include routers
 app.include_router(health_router)  # /health
 app.include_router(control_router)  # /api/*
+app.include_router(websocket_router)  # /ws/*
 
 # Mount static files if exists
 static_path = Path(__file__).parent.parent / "static"

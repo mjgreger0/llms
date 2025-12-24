@@ -196,6 +196,56 @@ class Settings(BaseSettings):
         return origins if origins else ["*"]
 
 
+class RouterConfig(BaseSettings):
+    """Router-specific configuration for Phase 5 request routing."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="ROUTER_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+    # Timeout settings
+    default_loading_timeout: int = Field(
+        default=120,
+        ge=30,
+        le=600,
+        description="Default loading timeout in seconds"
+    )
+    default_inference_timeout: int = Field(
+        default=120,
+        ge=30,
+        le=3600,
+        description="Default inference timeout in seconds"
+    )
+
+    # Keepalive settings
+    keepalive_interval: float = Field(
+        default=1.0,
+        ge=0.1,
+        le=10.0,
+        description="SSE keepalive interval in seconds"
+    )
+
+    # Capacity settings
+    max_gpus_per_machine: int = Field(
+        default=8,
+        ge=1,
+        le=16,
+        description="Maximum GPUs per machine for multi-machine detection"
+    )
+
+    # Queue settings
+    max_queue_size: int = Field(
+        default=100,
+        ge=1,
+        le=1000,
+        description="Maximum requests per model queue"
+    )
+
+
 @lru_cache
 def get_settings() -> Settings:
     """
@@ -213,5 +263,23 @@ def get_settings() -> Settings:
     return Settings()
 
 
+@lru_cache
+def get_router_config() -> RouterConfig:
+    """
+    Get cached router configuration instance.
+
+    Uses lru_cache to ensure configuration is only loaded once.
+    This prevents repeated environment variable parsing and validation.
+
+    Returns:
+        Cached RouterConfig instance.
+
+    Raises:
+        ValidationError: If router settings are invalid.
+    """
+    return RouterConfig()
+
+
 # Convenience export for direct import
 settings = get_settings()
+router_config = get_router_config()

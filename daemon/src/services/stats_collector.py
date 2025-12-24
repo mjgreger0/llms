@@ -29,17 +29,19 @@ class StatsCollector:
     /proc filesystem parsing, psutil, and pynvml for GPU monitoring.
     """
 
-    def __init__(self, proc_path: str = None, sys_path: str = None):
+    def __init__(self, proc_path: str = None, sys_path: str = None, container_manager=None):
         """
         Initialize the stats collector.
 
         Args:
             proc_path: Path to host's /proc directory (for containerized access)
             sys_path: Path to host's /sys directory (for hardware info)
+            container_manager: Optional ContainerManager instance for container stats
         """
         self.proc_path = proc_path or str(config.PROC_PATH)
         self.sys_path = sys_path or str(config.SYS_PATH)
         self.machine_id = config.MACHINE_ID
+        self.container_manager = container_manager
 
         # Initialize NVIDIA GPU monitoring
         try:
@@ -50,6 +52,9 @@ class StatsCollector:
 
         # Storage for network rate calculation
         self._prev_net: dict[str, dict] = {}
+
+        # GPU to model mapping (populated from container stats)
+        self._gpu_models: dict[int, str] = {}
 
     async def collect(self) -> MachineStats:
         """
@@ -448,8 +453,7 @@ class StatsCollector:
         """
         Get the model loaded on a specific GPU.
 
-        This is a stub implementation for now. Will be implemented when
-        ContainerManager integration is added.
+        Checks the GPU to model mapping populated from container stats.
 
         Args:
             index: GPU index
@@ -457,20 +461,38 @@ class StatsCollector:
         Returns:
             Model name if loaded, None otherwise
         """
-        # TODO: Implement with ContainerManager integration
-        # Will query running containers and match GPU assignments
-        return None
+        return self._gpu_models.get(index)
 
     def _collect_containers(self) -> list[ContainerStats]:
         """
         Collect statistics for running LLM containers.
 
-        This is a stub implementation for now. Will be implemented when
-        ContainerManager integration is added.
+        Uses ContainerManager to get stats for all running LLM containers.
+        Also updates GPU to model mapping based on container assignments.
 
         Returns:
-            List of ContainerStats objects (empty for now)
+            List of ContainerStats objects
         """
-        # TODO: Implement with ContainerManager integration
-        # Will use podman-py to list containers with llm-serve=true label
-        return []
+        if self.container_manager is None:
+            return []
+
+        try:
+            # Get container stats from ContainerManager
+            container_stats = self.container_manager.get_running_containers()
+
+            # Update GPU to model mapping
+            # Clear previous mappings
+            self._gpu_models.clear()
+
+            # Build new mapping from running containers
+            for container in container_stats:
+                # Only map if container is running
+                if container.status == "running":
+                    for gpu_idx in container.gpus:
+                        self._gpu_models[gpu_idx] = container.model
+
+            return container_stats
+
+        except Exception as e:
+            logger.error("container_collection_failed", error=str(e))
+            return []

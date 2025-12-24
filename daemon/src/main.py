@@ -4,8 +4,9 @@ This module initializes and runs all daemon services:
 - StatsCollector: Collects CPU, memory, network, and GPU metrics
 - ContainerManager: Manages LLM container lifecycle
 - HealthMonitor: Monitors container health and handles crashes
+- WebSocketClient: Connects to Dashboard and handles bidirectional communication
 
-Phase 2: Stats are printed to stdout (WebSocket integration in Phase 4)
+Phase 4: Full WebSocket integration with stats reporting and command handling
 """
 
 import asyncio
@@ -18,78 +19,77 @@ from src.logger import logger
 from src.services.stats_collector import StatsCollector
 from src.services.container_manager import ContainerManager
 from src.services.health_monitor import HealthMonitor
+from src.services.websocket_client import WebSocketClient
 
 # Global service instances
 stats_collector: Optional[StatsCollector] = None
 container_manager: Optional[ContainerManager] = None
 health_monitor: Optional[HealthMonitor] = None
+websocket_client: Optional[WebSocketClient] = None
 
 
 def initialize_services() -> None:
     """Initialize all daemon services."""
-    global stats_collector, container_manager, health_monitor
+    global stats_collector, container_manager, health_monitor, websocket_client
 
     logger.info(
         "initializing_services",
         machine_id=config.MACHINE_ID,
+        dashboard_url=config.DASHBOARD_URL,
         proc_path=str(config.PROC_PATH),
         sys_path=str(config.SYS_PATH),
         podman_socket=str(config.PODMAN_SOCKET),
     )
 
-    # Initialize StatsCollector with host paths
-    stats_collector = StatsCollector(
-        proc_path=str(config.PROC_PATH),
-        sys_path=str(config.SYS_PATH),
-    )
-    logger.info("stats_collector_initialized")
-
-    # Initialize ContainerManager with Podman socket
+    # Initialize ContainerManager first (needed by StatsCollector)
     container_manager = ContainerManager()
     logger.info("container_manager_initialized")
 
-    # Initialize HealthMonitor (websocket_client=None for Phase 2)
+    # Initialize StatsCollector with host paths and container_manager
+    stats_collector = StatsCollector(
+        proc_path=str(config.PROC_PATH),
+        sys_path=str(config.SYS_PATH),
+        container_manager=container_manager,
+    )
+    logger.info("stats_collector_initialized")
+
+    # Initialize WebSocketClient for Dashboard communication
+    websocket_client = WebSocketClient(
+        dashboard_url=config.DASHBOARD_URL,
+        stats_collector=stats_collector,
+        container_manager=container_manager,
+    )
+    logger.info("websocket_client_initialized")
+
+    # Initialize HealthMonitor with websocket_client
     health_monitor = HealthMonitor(
         container_manager=container_manager,
-        websocket_client=None,  # Will be set in Phase 4
+        websocket_client=websocket_client,
     )
     logger.info("health_monitor_initialized")
 
 
-async def stats_loop() -> None:
+async def stats_reporting_loop() -> None:
     """
-    Periodic stats collection and output loop.
+    Periodic stats collection and reporting loop.
 
-    Collects system metrics every STATS_INTERVAL_SECONDS and outputs
-    them to stdout as JSON. In Phase 4, this will send via WebSocket.
+    Collects system metrics every STATS_INTERVAL_SECONDS and sends them
+    to Dashboard via WebSocket.
     """
-    global stats_collector
+    global websocket_client
 
     logger.info(
-        "stats_loop_starting",
+        "stats_reporting_loop_starting",
         interval_seconds=config.STATS_INTERVAL_SECONDS,
     )
 
     while True:
         try:
-            # Collect stats
-            stats = await stats_collector.collect()
-
-            # Phase 2: Print stats to stdout as JSON
-            # Phase 4: Will send via WebSocket to Dashboard
-            stats_json = json.dumps(stats.to_dict(), indent=2)
-            print(stats_json)
-
-            logger.debug(
-                "stats_collected",
-                gpu_count=len(stats.gpus),
-                container_count=len(stats.containers),
-                cpu_load=stats.cpu.load_percent,
-                memory_used_gb=stats.memory.used_gb,
-            )
+            # Send stats report to Dashboard
+            await websocket_client.send_stats_report()
 
         except Exception as e:
-            logger.error("stats_collection_failed", error=str(e))
+            logger.error("stats_reporting_failed", error=str(e))
 
         # Wait for next collection interval
         await asyncio.sleep(config.STATS_INTERVAL_SECONDS)
@@ -100,10 +100,11 @@ async def main() -> None:
     Main entry point for the LLM Serve Daemon.
 
     Initializes all services and starts background tasks for:
+    - WebSocket connection to Dashboard (with auto-reconnection)
     - Health monitoring
-    - Stats collection
+    - Stats reporting
 
-    In Phase 4, will also connect to Dashboard via WebSocket.
+    Phase 4: Full WebSocket integration with Dashboard communication
     """
     logger.info(
         "daemon_starting",
@@ -125,23 +126,33 @@ async def main() -> None:
     tasks.append(health_monitor_task)
     logger.info("health_monitor_task_started")
 
-    # Start stats collection loop
-    stats_loop_task = asyncio.create_task(stats_loop())
-    stats_loop_task.set_name("stats_loop")
-    tasks.append(stats_loop_task)
-    logger.info("stats_loop_task_started")
+    # Start stats reporting loop
+    stats_reporting_task = asyncio.create_task(stats_reporting_loop())
+    stats_reporting_task.set_name("stats_reporting")
+    tasks.append(stats_reporting_task)
+    logger.info("stats_reporting_task_started")
 
     logger.info("daemon_ready", machine_id=config.MACHINE_ID)
 
-    # Phase 4: Will await websocket_client.connect() here
-    # For Phase 2, keep main coroutine alive with Event.wait()
+    # Phase 4: Connect to Dashboard and maintain connection
+    # This is the main blocking task that runs until shutdown
     try:
-        shutdown_event = asyncio.Event()
-
         # Set up signal handlers for graceful shutdown
+        shutdown_event = asyncio.Event()
         loop = asyncio.get_running_loop()
+
+        def signal_handler():
+            logger.info("shutdown_signal_received")
+            shutdown_event.set()
+
         for sig in (signal.SIGTERM, signal.SIGINT):
-            loop.add_signal_handler(sig, lambda: shutdown_event.set())
+            loop.add_signal_handler(sig, signal_handler)
+
+        # Start WebSocket connection task (runs until shutdown)
+        websocket_task = asyncio.create_task(websocket_client.connect())
+        websocket_task.set_name("websocket_client")
+        tasks.append(websocket_task)
+        logger.info("websocket_client_task_started")
 
         # Wait for shutdown signal
         await shutdown_event.wait()

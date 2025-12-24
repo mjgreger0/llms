@@ -31,6 +31,9 @@ def upgrade() -> None:
     # Convert cpu_stats to hypertable
     op.execute("SELECT create_hypertable('cpu_stats', 'time', if_not_exists => TRUE);")
 
+    # Create index on machine_id for efficient queries
+    op.create_index('idx_cpu_stats_machine_id', 'cpu_stats', ['machine_id'])
+
     # Add retention policy for cpu_stats (30 days)
     op.execute("SELECT add_retention_policy('cpu_stats', INTERVAL '30 days', if_not_exists => TRUE);")
 
@@ -53,6 +56,10 @@ def upgrade() -> None:
     # Convert gpu_stats to hypertable
     op.execute("SELECT create_hypertable('gpu_stats', 'time', if_not_exists => TRUE);")
 
+    # Create indexes for efficient queries
+    op.create_index('idx_gpu_stats_machine_id', 'gpu_stats', ['machine_id'])
+    op.create_index('idx_gpu_stats_gpu_uuid', 'gpu_stats', ['gpu_uuid'])
+
     # Add retention policy for gpu_stats (30 days)
     op.execute("SELECT add_retention_policy('gpu_stats', INTERVAL '30 days', if_not_exists => TRUE);")
 
@@ -70,11 +77,20 @@ def upgrade() -> None:
     # Convert memory_stats to hypertable
     op.execute("SELECT create_hypertable('memory_stats', 'time', if_not_exists => TRUE);")
 
+    # Create index on machine_id for efficient queries
+    op.create_index('idx_memory_stats_machine_id', 'memory_stats', ['machine_id'])
+
     # Add retention policy for memory_stats (30 days)
     op.execute("SELECT add_retention_policy('memory_stats', INTERVAL '30 days', if_not_exists => TRUE);")
 
 
 def downgrade() -> None:
+    # Drop indexes
+    op.drop_index('idx_memory_stats_machine_id', table_name='memory_stats')
+    op.drop_index('idx_gpu_stats_gpu_uuid', table_name='gpu_stats')
+    op.drop_index('idx_gpu_stats_machine_id', table_name='gpu_stats')
+    op.drop_index('idx_cpu_stats_machine_id', table_name='cpu_stats')
+
     # Drop tables (hypertables are automatically cleaned up)
     op.drop_table('memory_stats')
     op.drop_table('gpu_stats')

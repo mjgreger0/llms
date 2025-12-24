@@ -1,4 +1,4 @@
-"""JSON-RPC 2.0 protocol implementation for LLM Serve Daemon."""
+"""JSON-RPC 2.0 protocol implementation for LLM Serve Dashboard."""
 
 from .jsonrpc import (
     ErrorCode,

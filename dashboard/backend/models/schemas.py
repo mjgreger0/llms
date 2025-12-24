@@ -212,6 +212,121 @@ class ClusterStatusResponse(BaseModel):
 
 
 # ============================================================================
+# Cluster State Schemas (for real-time state tracking)
+# ============================================================================
+
+class ContainerState(BaseModel):
+    """Container state for real-time tracking.
+
+    Represents a running container on a machine with its current status.
+    """
+    id: str = Field(description="Container ID")
+    model: str = Field(description="Model name being run")
+    runtime: str = Field(description="Runtime engine (vllm, sglang, llamacpp)")
+    gpus: List[int] = Field(default_factory=list, description="GPU indices assigned to this container")
+    status: str = Field(description="Container status (running, starting, stopped, error)")
+    uptime: Optional[int] = Field(None, description="Uptime in seconds")
+
+    model_config = ConfigDict(from_attributes=True)
+
+    def model_dump(self, **kwargs) -> Dict[str, Any]:
+        """Convert to dict for API responses."""
+        return super().model_dump(**kwargs)
+
+
+class GPUState(BaseModel):
+    """GPU state for real-time tracking.
+
+    Represents current state of a single GPU on a machine.
+    """
+    index: int = Field(description="GPU index on the machine")
+    uuid: str = Field(description="GPU UUID (unique identifier)")
+    name: str = Field(description="GPU model name")
+    memory_total_mb: float = Field(description="Total GPU memory in MB")
+    memory_used_mb: float = Field(description="Used GPU memory in MB")
+    memory_free_mb: float = Field(description="Free GPU memory in MB")
+    utilization: int = Field(description="GPU utilization percentage (0-100)")
+    temperature: Optional[int] = Field(None, description="GPU temperature in Celsius")
+    assigned_model: Optional[str] = Field(None, description="Model currently assigned to this GPU")
+
+    model_config = ConfigDict(from_attributes=True)
+
+    def model_dump(self, **kwargs) -> Dict[str, Any]:
+        """Convert to dict for API responses."""
+        return super().model_dump(**kwargs)
+
+
+class MachineState(BaseModel):
+    """Machine state for real-time tracking.
+
+    Represents current state of a machine in the cluster with all its resources.
+    """
+    machine_id: str = Field(description="Unique machine identifier")
+    hostname: str = Field(description="Machine hostname")
+    connected: bool = Field(description="Whether machine daemon is connected")
+    last_seen: datetime = Field(description="Last heartbeat timestamp")
+    cpu_cores: int = Field(description="Number of CPU cores")
+    cpu_load_percent: float = Field(description="Current CPU load percentage")
+    memory_total_gb: float = Field(description="Total system memory in GB")
+    memory_used_gb: float = Field(description="Used system memory in GB")
+    memory_available_gb: float = Field(description="Available system memory in GB")
+    gpus: List[GPUState] = Field(default_factory=list, description="List of GPUs on this machine")
+    containers: List[ContainerState] = Field(default_factory=list, description="Running containers on this machine")
+
+    model_config = ConfigDict(from_attributes=True)
+
+    def model_dump(self, **kwargs) -> Dict[str, Any]:
+        """Convert to dict for API responses."""
+        return super().model_dump(**kwargs)
+
+
+class ClusterState(BaseModel):
+    """Complete cluster state for real-time tracking.
+
+    Contains the current state of all machines and running models in the cluster.
+    This is the top-level state object maintained by the ClusterStateService.
+    """
+    machines: Dict[str, MachineState] = Field(
+        default_factory=dict,
+        description="Map of machine_id to MachineState"
+    )
+    running_models: Dict[str, List[str]] = Field(
+        default_factory=dict,
+        description="Map of model_name to list of machine_ids running it"
+    )
+
+    model_config = ConfigDict(from_attributes=True)
+
+    def model_dump(self, **kwargs) -> Dict[str, Any]:
+        """Convert to dict for API responses."""
+        return super().model_dump(**kwargs)
+
+    def get_total_machines(self) -> int:
+        """Get total number of machines."""
+        return len(self.machines)
+
+    def get_online_machines(self) -> int:
+        """Get number of connected machines."""
+        return sum(1 for m in self.machines.values() if m.connected)
+
+    def get_total_gpus(self) -> int:
+        """Get total number of GPUs across all machines."""
+        return sum(len(m.gpus) for m in self.machines.values())
+
+    def get_free_gpus(self) -> int:
+        """Get number of unassigned GPUs."""
+        return sum(
+            1 for m in self.machines.values()
+            for gpu in m.gpus
+            if gpu.assigned_model is None
+        )
+
+    def get_running_models_list(self) -> List[str]:
+        """Get list of unique running model names."""
+        return list(self.running_models.keys())
+
+
+# ============================================================================
 # Settings Schemas
 # ============================================================================
 
