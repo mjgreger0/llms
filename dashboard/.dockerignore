@@ -1,0 +1,40 @@
+# Node.js
+node_modules/
+frontend/node_modules/
+npm-debug.log*
+
+# SvelteKit build artifacts (we rebuild in container)
+frontend/.svelte-kit/
+frontend/build/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+venv/
+.venv/
+
+# Git
+.git/
+.gitignore
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+
+# Logs
+*.log
+logs/
+
+# Tests
+tests/
+*_test.py
+test_*.py

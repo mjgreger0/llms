@@ -1,0 +1,44 @@
+# LLM Serve Daemon - GPU Node Agent
+# Single-stage build for Python daemon
+
+FROM python:3.11-slim
+
+# Labels
+LABEL org.opencontainers.image.title="LLM Serve Daemon"
+LABEL org.opencontainers.image.description="GPU node agent for LLM cluster management"
+LABEL org.opencontainers.image.version="0.1.0"
+LABEL component="daemon"
+
+WORKDIR /app
+
+# Copy daemon source code and Python package config
+COPY src/ ./src/
+COPY pyproject.toml ./
+
+# Install Python dependencies
+RUN pip install --no-cache-dir .
+
+# =============================================================================
+# Required Runtime Mounts (pass to podman run):
+# =============================================================================
+# Host system access for monitoring:
+#   -v /proc:/host/proc:ro
+#   -v /sys:/host/sys:ro
+#
+# Podman socket for container management:
+#   -v /run/podman/podman.sock:/run/podman/podman.sock
+#
+# GPU access (NVIDIA CDI):
+#   --device nvidia.com/gpu=all
+#
+# Example run command:
+#   podman run --rm \
+#     -v /proc:/host/proc:ro \
+#     -v /sys:/host/sys:ro \
+#     -v /run/podman/podman.sock:/run/podman/podman.sock \
+#     --device nvidia.com/gpu=all \
+#     llm-serve-daemon:latest
+# =============================================================================
+
+# Run daemon
+CMD ["python", "-m", "src.main"]
