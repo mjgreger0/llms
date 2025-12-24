@@ -1,23 +1,72 @@
-"""LLM Serve Dashboard - FastAPI Application Entrypoint."""
+"""LLM Serve Dashboard - FastAPI Application Entry Point."""
 
-from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
+from contextlib import asynccontextmanager
 from pathlib import Path
 
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+
+from dashboard.backend.config import get_settings
+from dashboard.backend.db.session import init_db, close_db
+from dashboard.backend.logging_config import configure_logging, get_logger
+from dashboard.backend.middleware import (
+    RequestContextMiddleware,
+    LoggingMiddleware,
+    TimingMiddleware,
+)
+from dashboard.backend.api.health import router as health_router
+from dashboard.backend.api.control import router as control_router
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan context manager."""
+    settings = get_settings()
+    logger = get_logger(__name__)
+
+    # Startup
+    configure_logging()
+    logger.info("application_starting", version=settings.app_version)
+    init_db()
+    logger.info("database_initialized")
+
+    yield
+
+    # Shutdown
+    logger.info("application_shutting_down")
+    await close_db()
+    logger.info("database_closed")
+
+
+settings = get_settings()
+
 app = FastAPI(
-    title="LLM Serve Dashboard",
+    title=settings.app_name,
     description="Centralized control plane for LLM cluster management",
-    version="0.1.0",
+    version=settings.app_version,
+    lifespan=lifespan,
 )
 
+# CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.get_allowed_origins(),
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-@app.get("/health")
-async def health():
-    """Health check endpoint."""
-    return {"status": "ok"}
+# Custom middleware (order matters - they execute in reverse order)
+app.add_middleware(TimingMiddleware)
+app.add_middleware(LoggingMiddleware)
+app.add_middleware(RequestContextMiddleware)
 
+# Include routers
+app.include_router(health_router)  # /health
+app.include_router(control_router)  # /api/*
 
-# Mount static files if the directory exists (production mode)
+# Mount static files if exists
 static_path = Path(__file__).parent.parent / "static"
 if static_path.exists():
     app.mount("/", StaticFiles(directory=str(static_path), html=True), name="static")
