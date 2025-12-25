@@ -125,6 +125,8 @@ class ContainerConfigBase(BaseModel):
     tensor_parallel: Optional[int] = None
     pipeline_parallel: Optional[int] = None
     extra_args: Optional[Dict[str, Any]] = None
+    environment: Optional[Dict[str, str]] = None
+    is_default: bool = False
 
 
 class ContainerConfigCreate(ContainerConfigBase):
@@ -151,6 +153,19 @@ class ContainerConfigResponse(ContainerConfigBase):
     model_quant: Optional[ModelQuantInfo] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class ContainerConfigUpdate(BaseModel):
+    """Schema for updating a container config.
+
+    Only includes fields that are safe to update. Runtime, gpu_count,
+    and tensor_parallel are structural changes that require container restart.
+    """
+    context_length: Optional[int] = Field(None, gt=0)
+    max_parallel: Optional[int] = Field(None, gt=0)
+    extra_args: Optional[Dict[str, Any]] = None
+    environment: Optional[Dict[str, str]] = None
+    is_default: Optional[bool] = None
 
 
 # ============================================================================

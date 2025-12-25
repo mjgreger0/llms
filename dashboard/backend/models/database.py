@@ -338,6 +338,18 @@ class ContainerConfig(Base, TimestampMixin):
         doc="Additional runtime-specific arguments (JSON)"
     )
 
+    environment: Mapped[Optional[dict]] = mapped_column(
+        JSONB,
+        nullable=True,
+        doc="Container environment variables as key-value pairs"
+    )
+
+    is_default: Mapped[bool] = mapped_column(
+        nullable=False,
+        server_default="false",
+        doc="Whether this is the default config for the model+quant"
+    )
+
     # Relationships
     model_quantization: Mapped["ModelQuantization"] = relationship(
         "ModelQuantization",

@@ -25,6 +25,11 @@ from .timeout_calculator import (
     with_timeout,
 )
 from .model_router import model_router, ModelRouter
+from .health_check import health_checker, ContainerHealthChecker
+from .container_command import (
+    ContainerCommandGenerator,
+    PortAllocator,
+)
 
 __all__ = [
     # Cluster state
@@ -69,4 +74,10 @@ __all__ = [
     # Model router
     "model_router",
     "ModelRouter",
+    # Health checker
+    "health_checker",
+    "ContainerHealthChecker",
+    # Container command generator
+    "ContainerCommandGenerator",
+    "PortAllocator",
 ]

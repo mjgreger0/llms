@@ -242,6 +242,10 @@ async def list_models(
 
 @router.get("/containers", response_model=List[schemas.ContainerConfigResponse])
 async def list_container_configs(
+    runtime: str | None = None,
+    model_name: str | None = None,
+    limit: int = 100,
+    offset: int = 0,
     db: AsyncSession = Depends(get_db),
 ) -> List[schemas.ContainerConfigResponse]:
     """List all container configurations.
@@ -249,23 +253,49 @@ async def list_container_configs(
     Returns container configurations with nested model quantization information.
 
     Args:
+        runtime: Filter by runtime (vllm, sglang, llamacpp)
+        model_name: Filter by model name (partial match)
+        limit: Maximum number of results (default: 100)
+        offset: Number of results to skip (default: 0)
         db: Database session dependency
 
     Returns:
         List of ContainerConfigResponse objects
     """
-    logger.info("container_configs_list_requested")
+    logger.info(
+        "container_configs_list_requested",
+        runtime=runtime,
+        model_name=model_name,
+        limit=limit,
+        offset=offset,
+    )
 
-    # Query all container configs with eager loading of model quantization
-    result = await db.execute(
+    # Build query with eager loading
+    query = (
         select(ContainerConfig)
         .options(
             selectinload(ContainerConfig.model_quantization).selectinload(
                 ModelQuantization.model
             )
         )
-        .order_by(ContainerConfig.id)
     )
+
+    # Apply filters
+    if runtime:
+        query = query.where(ContainerConfig.runtime == runtime)
+
+    if model_name:
+        # Join with model to filter by name
+        query = query.join(
+            ContainerConfig.model_quantization
+        ).join(
+            ModelQuantization.model
+        ).where(Model.name.ilike(f"%{model_name}%"))
+
+    # Apply pagination
+    query = query.order_by(ContainerConfig.id).limit(limit).offset(offset)
+
+    result = await db.execute(query)
     configs = result.scalars().all()
 
     # Convert to response models
@@ -292,6 +322,8 @@ async def list_container_configs(
                 tensor_parallel=config.tensor_parallel,
                 pipeline_parallel=config.pipeline_parallel,
                 extra_args=config.extra_args,
+                environment=config.environment,
+                is_default=config.is_default,
                 created_at=config.created_at,
                 updated_at=config.updated_at,
                 model_quant=model_quant_info,
@@ -361,6 +393,89 @@ async def get_container_config(
         tensor_parallel=config.tensor_parallel,
         pipeline_parallel=config.pipeline_parallel,
         extra_args=config.extra_args,
+        environment=config.environment,
+        is_default=config.is_default,
+        created_at=config.created_at,
+        updated_at=config.updated_at,
+        model_quant=model_quant_info,
+    )
+
+
+@router.put("/containers/{config_id}", response_model=schemas.ContainerConfigResponse)
+async def update_container_config(
+    config_id: int,
+    update: schemas.ContainerConfigUpdate,
+    db: AsyncSession = Depends(get_db),
+) -> schemas.ContainerConfigResponse:
+    """Update a container configuration.
+
+    Updates allowed fields: context_length, max_parallel, extra_args, environment.
+    Structural changes (runtime, tensor_parallel) require creating a new config.
+
+    Args:
+        config_id: Container configuration ID
+        update: ContainerConfigUpdate with fields to update
+        db: Database session dependency
+
+    Returns:
+        ContainerConfigResponse with updated config
+
+    Raises:
+        HTTPException: 404 if config not found
+    """
+    logger.info("container_config_update_requested", config_id=config_id)
+
+    # Query config by ID with eager loading
+    result = await db.execute(
+        select(ContainerConfig)
+        .where(ContainerConfig.id == config_id)
+        .options(
+            selectinload(ContainerConfig.model_quantization).selectinload(
+                ModelQuantization.model
+            )
+        )
+    )
+    config = result.scalar_one_or_none()
+
+    if not config:
+        logger.warning("container_config_not_found", config_id=config_id)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Container config with id {config_id} not found",
+        )
+
+    # Apply updates (only for non-None values)
+    update_data = update.model_dump(exclude_unset=True)
+
+    for field, value in update_data.items():
+        setattr(config, field, value)
+
+    await db.commit()
+    await db.refresh(config)
+
+    # Build ModelQuantInfo if available
+    model_quant_info = None
+    if config.model_quantization:
+        quant = config.model_quantization
+        model_quant_info = schemas.ModelQuantInfo(
+            id=quant.id,
+            model_name=quant.model.name if quant.model else "Unknown",
+            quantization=quant.quantization,
+            file_path=quant.file_path or "",
+        )
+
+    logger.info("container_config_updated", config_id=config_id)
+    return schemas.ContainerConfigResponse(
+        id=config.id,
+        model_quant_id=config.model_quant_id,
+        runtime=config.runtime,
+        context_length=config.context_length,
+        max_parallel=config.max_parallel,
+        tensor_parallel=config.tensor_parallel,
+        pipeline_parallel=config.pipeline_parallel,
+        extra_args=config.extra_args,
+        environment=config.environment,
+        is_default=config.is_default,
         created_at=config.created_at,
         updated_at=config.updated_at,
         model_quant=model_quant_info,

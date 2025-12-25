@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from dashboard.backend.services.cluster_state import cluster_state, MachineState, ContainerState
 from dashboard.backend.services.daemon_manager import daemon_manager
+from dashboard.backend.services.health_check import health_checker
 from dashboard.backend.models.database import Model, ModelQuantization, ContainerConfig
 from dashboard.backend.db.session import AsyncSessionLocal
 
@@ -53,7 +54,119 @@ class ModelRouter:
         """Clean up resources on shutdown."""
         if self._http_client:
             await self._http_client.aclose()
+        await health_checker.shutdown()
         logger.info("model_router_shutdown")
+
+    async def ensure_capacity(
+        self, model_name: str, quantization: Optional[str]
+    ) -> Tuple[str, ContainerState]:
+        """Ensure a model is loaded and ready to receive requests.
+
+        This method orchestrates the full process of:
+        1. Checking if the model is already running
+        2. If not: checking GPU requirements, finding capacity,
+           evicting if needed, and loading the model
+        3. Health check polling until the container is ready
+
+        Args:
+            model_name: Base model name
+            quantization: Quantization suffix or None
+
+        Returns:
+            Tuple of (machine_id, ContainerState) for the ready container
+
+        Raises:
+            ValueError: If model+quant not found in database
+            RuntimeError: If no capacity available or loading fails
+        """
+        async with self._lock:
+            # Check if model is already running
+            running = await get_running_container(model_name, quantization)
+
+            if running:
+                machine_id, container = running
+                logger.info(
+                    "ensure_capacity_found_running",
+                    model=model_name,
+                    quantization=quantization,
+                    machine_id=machine_id,
+                )
+                # Update last used time
+                model_key = f"{model_name}-{quantization}" if quantization else model_name
+                self._last_used[model_key] = datetime.utcnow()
+                return running
+
+            # Model not running - need to load it
+            logger.info(
+                "ensure_capacity_loading_model",
+                model=model_name,
+                quantization=quantization,
+            )
+
+            # Get GPU requirements
+            requirements = await get_gpu_requirements(model_name, quantization)
+
+            # Find available machine
+            machine_id = await find_available_machine(
+                requirements["vram_required_gb"],
+                requirements["gpu_count"],
+            )
+
+            if not machine_id:
+                # Try eviction
+                logger.info(
+                    "ensure_capacity_evicting",
+                    required_vram_gb=requirements["vram_required_gb"],
+                )
+
+                await evict_lru_models(requirements["vram_required_gb"])
+
+                # Retry finding machine after eviction
+                machine_id = await find_available_machine(
+                    requirements["vram_required_gb"],
+                    requirements["gpu_count"],
+                )
+
+                if not machine_id:
+                    raise RuntimeError(
+                        "No capacity available even after eviction"
+                    )
+
+            # Load model with health check polling
+            loading_event = asyncio.Event()
+
+            container = await load_model_with_health_check(
+                machine_id=machine_id,
+                model_name=model_name,
+                quantization=quantization,
+                vram_gb=requirements["vram_required_gb"],
+                loading_event=loading_event,
+            )
+
+            # Update last used time
+            model_key = f"{model_name}-{quantization}" if quantization else model_name
+            self._last_used[model_key] = datetime.utcnow()
+
+            logger.info(
+                "ensure_capacity_complete",
+                model=model_name,
+                quantization=quantization,
+                machine_id=machine_id,
+                container_id=container.container_id,
+            )
+
+            return (machine_id, container)
+
+    def get_last_used(self, model_key: str) -> Optional[datetime]:
+        """Get last used timestamp for a model.
+
+        Args:
+            model_key: Model key (e.g., "qwen2.5-72b-instruct-awq")
+
+        Returns:
+            Last used datetime or None if never used
+        """
+        return self._last_used.get(model_key)
 
 
 def parse_model_name(model_string: str) -> Tuple[str, Optional[str]]:
@@ -516,6 +629,199 @@ async def load_model(
     except Exception as e:
         logger.error(
             "model_loading_failed",
+            machine_id=machine_id,
+            model=model_quant,
+            error=str(e),
+            error_type=type(e).__name__,
+        )
+        raise RuntimeError(f"Failed to load model: {str(e)}") from e
+
+
+async def load_model_with_health_check(
+    machine_id: str,
+    model_name: str,
+    quantization: Optional[str],
+    vram_gb: float,
+    loading_event: asyncio.Event
+) -> ContainerState:
+    """Load a model on a machine with proper health check polling.
+
+    This is an enhanced version of load_model that uses the ContainerHealthChecker
+    to poll the container's health endpoint instead of relying on cluster state updates.
+
+    Args:
+        machine_id: Target machine
+        model_name: Model to load
+        quantization: Quantization to use
+        vram_gb: VRAM required (for timeout calculation)
+        loading_event: Event to set when loading completes
+
+    Returns:
+        ContainerState for the loaded container
+
+    Raises:
+        RuntimeError: If loading fails
+        TimeoutError: If health check times out
+    """
+    # Build model+quant identifier
+    if quantization:
+        model_quant = f"{model_name}-{quantization}"
+    else:
+        model_quant = model_name
+
+    logger.info(
+        "loading_model_with_health_check",
+        machine_id=machine_id,
+        model=model_quant,
+        vram_gb=vram_gb,
+    )
+
+    # Get container config from database
+    if AsyncSessionLocal is None:
+        raise RuntimeError("Database not initialized")
+
+    async with AsyncSessionLocal() as db:
+        stmt = (
+            select(ModelQuantization, ContainerConfig, Model)
+            .join(Model, Model.id == ModelQuantization.model_id)
+            .join(ContainerConfig, ContainerConfig.model_quant_id == ModelQuantization.id)
+            .where(Model.name == model_name)
+        )
+
+        if quantization:
+            stmt = stmt.where(ModelQuantization.quantization == quantization)
+
+        result = await db.execute(stmt)
+        row = result.first()
+
+        if not row:
+            raise RuntimeError(
+                f"Model+quant not found in database: {model_name}"
+                + (f"-{quantization}" if quantization else "")
+            )
+
+        model_quant_obj, container_config, model_obj = row
+
+        # Build container.start parameters
+        params = {
+            "model": model_quant,
+            "model_path": model_quant_obj.file_path,
+            "runtime": container_config.runtime,
+            "gpu_count": model_quant_obj.gpu_count,
+            "context_length": container_config.context_length,
+            "max_parallel": container_config.max_parallel,
+            "tensor_parallel": container_config.tensor_parallel,
+            "pipeline_parallel": container_config.pipeline_parallel,
+        }
+
+        if container_config.extra_args:
+            params["extra_args"] = container_config.extra_args
+
+        if container_config.environment:
+            params["environment"] = container_config.environment
+
+    try:
+        # Send container.start command to daemon
+        result = await daemon_manager.send_request(
+            machine_id=machine_id,
+            method="container.start",
+            params=params,
+            timeout=300.0,  # 5 minute timeout for starting
+        )
+
+        container_id = result.get("container_id")
+        container_port = result.get("port", 8000)
+
+        if not container_id:
+            raise RuntimeError("Daemon did not return container_id")
+
+        logger.info(
+            "container_start_initiated",
+            machine_id=machine_id,
+            container_id=container_id,
+            port=container_port,
+            model=model_quant,
+        )
+
+        # Get machine info to build health check URL
+        machine = await cluster_state.get_machine(machine_id)
+        if not machine:
+            raise RuntimeError(f"Machine not found: {machine_id}")
+
+        # Build health check endpoint URL
+        health_endpoint = f"http://{machine.hostname}:{container_port}"
+
+        # Calculate timeout based on VRAM (larger models take longer)
+        timeout = health_checker.calculate_timeout_for_vram(vram_gb)
+
+        logger.info(
+            "starting_health_check_polling",
+            machine_id=machine_id,
+            container_id=container_id,
+            endpoint=health_endpoint,
+            timeout=timeout,
+        )
+
+        # Ensure health checker is started
+        await health_checker.startup()
+
+        try:
+            # Poll until ready
+            await health_checker.poll_until_ready(
+                endpoint=health_endpoint,
+                timeout=timeout,
+                interval=2.0,
+            )
+        except TimeoutError as e:
+            logger.error(
+                "health_check_timeout",
+                machine_id=machine_id,
+                container_id=container_id,
+                model=model_quant,
+                timeout=timeout,
+            )
+            raise RuntimeError(
+                f"Container health check timed out after {timeout}s: {container_id}"
+            ) from e
+
+        # Health check succeeded - set loading event
+        loading_event.set()
+
+        # Get container state from cluster
+        machine = await cluster_state.get_machine(machine_id)
+        if machine:
+            for container in machine.containers:
+                if container.container_id == container_id:
+                    logger.info(
+                        "model_loaded_with_health_check",
+                        machine_id=machine_id,
+                        container_id=container_id,
+                        model=model_quant,
+                    )
+                    return container
+
+        # Container not in cluster state yet, create a minimal ContainerState
+        from dashboard.backend.models.schemas import ContainerState as ContainerStateSchema
+        container_state = ContainerStateSchema(
+            id=container_id,
+            model=model_quant,
+            runtime=container_config.runtime,
+            gpus=[],  # Will be populated by cluster state update
+            status="ready",
+        )
+
+        logger.info(
+            "model_loaded_with_health_check",
+            machine_id=machine_id,
+            container_id=container_id,
+            model=model_quant,
+        )
+
+        return container_state
+
+    except Exception as e:
+        logger.error(
+            "model_loading_with_health_check_failed",
             machine_id=machine_id,
             model=model_quant,
             error=str(e),
