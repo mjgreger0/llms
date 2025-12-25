@@ -1,0 +1,464 @@
+/**
+ * Global styles for LLM Serve Dashboard.
+ * Dark theme optimized for monitoring.
+ */
+
+/* ============================================================================
+   CSS Custom Properties
+   ============================================================================ */
+
+:root {
+	/* Colors - Dark Theme */
+	--color-bg: #0d1117;
+	--color-bg-secondary: #161b22;
+	--color-bg-tertiary: #21262d;
+	--color-bg-hover: #30363d;
+
+	--color-border: #30363d;
+	--color-border-light: #21262d;
+
+	--color-text: #e6edf3;
+	--color-text-secondary: #8b949e;
+	--color-text-muted: #6e7681;
+
+	/* Accent colors */
+	--color-primary: #58a6ff;
+	--color-primary-hover: #79b8ff;
+
+	--color-success: #3fb950;
+	--color-success-bg: rgba(63, 185, 80, 0.15);
+
+	--color-warning: #d29922;
+	--color-warning-bg: rgba(210, 153, 34, 0.15);
+
+	--color-error: #f85149;
+	--color-error-bg: rgba(248, 81, 73, 0.15);
+
+	--color-info: #58a6ff;
+	--color-info-bg: rgba(88, 166, 255, 0.15);
+
+	/* Temperature colors */
+	--color-temp-normal: var(--color-success);
+	--color-temp-warm: var(--color-warning);
+	--color-temp-hot: var(--color-error);
+
+	/* Memory usage colors */
+	--color-memory-low: var(--color-success);
+	--color-memory-medium: var(--color-primary);
+	--color-memory-high: var(--color-warning);
+	--color-memory-critical: var(--color-error);
+
+	/* Spacing scale */
+	--space-1: 0.25rem;
+	--space-2: 0.5rem;
+	--space-3: 0.75rem;
+	--space-4: 1rem;
+	--space-5: 1.25rem;
+	--space-6: 1.5rem;
+	--space-8: 2rem;
+	--space-10: 2.5rem;
+	--space-12: 3rem;
+
+	/* Typography */
+	--font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial,
+		sans-serif;
+	--font-family-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono',
+		monospace;
+
+	--font-size-xs: 0.75rem;
+	--font-size-sm: 0.875rem;
+	--font-size-base: 1rem;
+	--font-size-lg: 1.125rem;
+	--font-size-xl: 1.25rem;
+	--font-size-2xl: 1.5rem;
+	--font-size-3xl: 1.875rem;
+
+	--line-height-tight: 1.25;
+	--line-height-normal: 1.5;
+	--line-height-relaxed: 1.75;
+
+	/* Border radius */
+	--radius-sm: 4px;
+	--radius-md: 6px;
+	--radius-lg: 8px;
+	--radius-xl: 12px;
+
+	/* Shadows */
+	--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+	--shadow-md: 0 4px 6px rgba(0, 0, 0, 0.3);
+	--shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.3);
+
+	/* Transitions */
+	--transition-fast: 150ms ease;
+	--transition-normal: 250ms ease;
+
+	/* Layout */
+	--sidebar-width: 240px;
+	--header-height: 56px;
+}
+
+/* ============================================================================
+   Reset / Base
+   ============================================================================ */
+
+*,
+*::before,
+*::after {
+	box-sizing: border-box;
+	margin: 0;
+	padding: 0;
+}
+
+html {
+	font-size: 16px;
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+}
+
+body {
+	font-family: var(--font-family);
+	font-size: var(--font-size-base);
+	line-height: var(--line-height-normal);
+	color: var(--color-text);
+	background-color: var(--color-bg);
+	min-height: 100vh;
+}
+
+/* ============================================================================
+   Typography
+   ============================================================================ */
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+	font-weight: 600;
+	line-height: var(--line-height-tight);
+	color: var(--color-text);
+}
+
+h1 {
+	font-size: var(--font-size-3xl);
+}
+h2 {
+	font-size: var(--font-size-2xl);
+}
+h3 {
+	font-size: var(--font-size-xl);
+}
+h4 {
+	font-size: var(--font-size-lg);
+}
+
+p {
+	margin-bottom: var(--space-4);
+}
+
+a {
+	color: var(--color-primary);
+	text-decoration: none;
+	transition: color var(--transition-fast);
+}
+
+a:hover {
+	color: var(--color-primary-hover);
+	text-decoration: underline;
+}
+
+code,
+pre {
+	font-family: var(--font-family-mono);
+	font-size: var(--font-size-sm);
+}
+
+code {
+	background-color: var(--color-bg-tertiary);
+	padding: 0.125em 0.375em;
+	border-radius: var(--radius-sm);
+}
+
+pre {
+	background-color: var(--color-bg-secondary);
+	padding: var(--space-4);
+	border-radius: var(--radius-md);
+	overflow-x: auto;
+}
+
+/* ============================================================================
+   Forms
+   ============================================================================ */
+
+button,
+input,
+select,
+textarea {
+	font-family: inherit;
+	font-size: inherit;
+}
+
+button {
+	cursor: pointer;
+	background-color: var(--color-bg-tertiary);
+	color: var(--color-text);
+	border: 1px solid var(--color-border);
+	padding: var(--space-2) var(--space-4);
+	border-radius: var(--radius-md);
+	transition: all var(--transition-fast);
+}
+
+button:hover:not(:disabled) {
+	background-color: var(--color-bg-hover);
+	border-color: var(--color-border-light);
+}
+
+button:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+button.primary {
+	background-color: var(--color-primary);
+	border-color: var(--color-primary);
+	color: white;
+}
+
+button.primary:hover:not(:disabled) {
+	background-color: var(--color-primary-hover);
+	border-color: var(--color-primary-hover);
+}
+
+input,
+select,
+textarea {
+	background-color: var(--color-bg-secondary);
+	color: var(--color-text);
+	border: 1px solid var(--color-border);
+	padding: var(--space-2) var(--space-3);
+	border-radius: var(--radius-md);
+	transition: border-color var(--transition-fast);
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+	outline: none;
+	border-color: var(--color-primary);
+}
+
+input::placeholder,
+textarea::placeholder {
+	color: var(--color-text-muted);
+}
+
+/* ============================================================================
+   Utility Classes
+   ============================================================================ */
+
+.text-secondary {
+	color: var(--color-text-secondary);
+}
+
+.text-muted {
+	color: var(--color-text-muted);
+}
+
+.text-success {
+	color: var(--color-success);
+}
+
+.text-warning {
+	color: var(--color-warning);
+}
+
+.text-error {
+	color: var(--color-error);
+}
+
+.text-mono {
+	font-family: var(--font-family-mono);
+}
+
+.text-sm {
+	font-size: var(--font-size-sm);
+}
+
+.text-xs {
+	font-size: var(--font-size-xs);
+}
+
+/* Temperature colors */
+.temp-normal {
+	color: var(--color-temp-normal);
+}
+.temp-warm {
+	color: var(--color-temp-warm);
+}
+.temp-hot {
+	color: var(--color-temp-hot);
+}
+.temp-unknown {
+	color: var(--color-text-muted);
+}
+
+/* Memory colors */
+.memory-low {
+	color: var(--color-memory-low);
+}
+.memory-medium {
+	color: var(--color-memory-medium);
+}
+.memory-high {
+	color: var(--color-memory-high);
+}
+.memory-critical {
+	color: var(--color-memory-critical);
+}
+
+/* ============================================================================
+   Card Component
+   ============================================================================ */
+
+.card {
+	background-color: var(--color-bg-secondary);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-lg);
+	padding: var(--space-4);
+}
+
+.card-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	margin-bottom: var(--space-4);
+	padding-bottom: var(--space-3);
+	border-bottom: 1px solid var(--color-border-light);
+}
+
+.card-title {
+	font-size: var(--font-size-lg);
+	font-weight: 600;
+}
+
+/* ============================================================================
+   Grid Layouts
+   ============================================================================ */
+
+.grid {
+	display: grid;
+	gap: var(--space-4);
+}
+
+.grid-2 {
+	grid-template-columns: repeat(2, 1fr);
+}
+
+.grid-3 {
+	grid-template-columns: repeat(3, 1fr);
+}
+
+.grid-4 {
+	grid-template-columns: repeat(4, 1fr);
+}
+
+@media (max-width: 1200px) {
+	.grid-4 {
+		grid-template-columns: repeat(3, 1fr);
+	}
+}
+
+@media (max-width: 900px) {
+	.grid-3,
+	.grid-4 {
+		grid-template-columns: repeat(2, 1fr);
+	}
+}
+
+@media (max-width: 600px) {
+	.grid-2,
+	.grid-3,
+	.grid-4 {
+		grid-template-columns: 1fr;
+	}
+}
+
+/* ============================================================================
+   Progress Bar
+   ============================================================================ */
+
+.progress-bar {
+	height: 8px;
+	background-color: var(--color-bg-tertiary);
+	border-radius: 4px;
+	overflow: hidden;
+}
+
+.progress-bar-fill {
+	height: 100%;
+	background-color: var(--color-primary);
+	transition: width var(--transition-normal);
+}
+
+.progress-bar-fill.success {
+	background-color: var(--color-success);
+}
+.progress-bar-fill.warning {
+	background-color: var(--color-warning);
+}
+.progress-bar-fill.error {
+	background-color: var(--color-error);
+}
+
+/* ============================================================================
+   Scrollbar
+   ============================================================================ */
+
+::-webkit-scrollbar {
+	width: 8px;
+	height: 8px;
+}
+
+::-webkit-scrollbar-track {
+	background: var(--color-bg);
+}
+
+::-webkit-scrollbar-thumb {
+	background: var(--color-bg-hover);
+	border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+	background: var(--color-text-muted);
+}
+
+/* ============================================================================
+   Animations
+   ============================================================================ */
+
+@keyframes spin {
+	from {
+		transform: rotate(0deg);
+	}
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+@keyframes pulse {
+	0%,
+	100% {
+		opacity: 1;
+	}
+	50% {
+		opacity: 0.5;
+	}
+}
+
+.animate-spin {
+	animation: spin 1s linear infinite;
+}
+
+.animate-pulse {
+	animation: pulse 2s ease-in-out infinite;
+}

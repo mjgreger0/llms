@@ -6,7 +6,7 @@ dashboard's control plane.
 """
 
 from datetime import datetime
-from typing import Dict, List
+from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -429,10 +429,10 @@ async def get_logs(
 # ============================================================================
 
 
-@router.get("/settings", response_model=Dict[str, any])
+@router.get("/settings", response_model=Dict[str, Any])
 async def list_settings(
     db: AsyncSession = Depends(get_db),
-) -> Dict[str, any]:
+) -> Dict[str, Any]:
     """Get all system settings as a dictionary.
 
     Returns all settings as key-value pairs for easy access.
@@ -547,7 +547,7 @@ async def update_setting(
 
 
 @router.get("/router/status")
-async def get_router_status() -> Dict[str, any]:
+async def get_router_status() -> Dict[str, Any]:
     """Get router queue status for all models.
 
     Returns queue depth, active request counts, and last-used timestamps
@@ -570,7 +570,7 @@ async def get_router_status() -> Dict[str, any]:
 
 
 @router.get("/router/config")
-async def get_router_config() -> Dict[str, any]:
+async def get_router_config() -> Dict[str, Any]:
     """Get current router configuration.
 
     Returns the active router configuration including timeout settings,

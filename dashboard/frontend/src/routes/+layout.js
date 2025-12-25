@@ -1,2 +1,3 @@
-// Enable prerendering for static site generation
-export const prerender = true;
+// Disable prerendering for dynamic data
+export const prerender = false;
+export const ssr = false;

@@ -85,7 +85,13 @@ app.include_router(openai_router)  # /v1/*
 # Register exception handlers for router errors
 register_exception_handlers(app)
 
-# Mount static files if exists
+# Mount static files for frontend
+# First check for frontend build directory (production)
+frontend_build_path = Path(__file__).parent.parent / "frontend" / "build"
 static_path = Path(__file__).parent.parent / "static"
-if static_path.exists():
+
+# Use frontend build if available, otherwise fall back to static directory
+if frontend_build_path.exists():
+    app.mount("/", StaticFiles(directory=str(frontend_build_path), html=True), name="static")
+elif static_path.exists():
     app.mount("/", StaticFiles(directory=str(static_path), html=True), name="static")
